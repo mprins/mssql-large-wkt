@@ -14,24 +14,23 @@ import java.util.Arrays;
 import java.util.Collection;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 /**
- *
  * To set up:
  * <pre>
-     # pull docker image
-     docker pull mcr.microsoft.com/mssql/server:2017-latest
-
-     # create container
-     docker run --rm -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=YourStrong!Passw0rd' \
-     -p 1401:1433 --name sql1 -h sql1 \
-     -d mcr.microsoft.com/mssql/server:2017-latest
-
-     # create database + table
-     sqlcmd -S localhost,1401 -U SA -P 'YourStrong!Passw0rd' -Q "CREATE DATABASE geomtest;"
-     sqlcmd -S localhost,1401 -U SA -P 'YourStrong!Passw0rd' -Q "CREATE TABLE geomtest.dbo.geom (id NUMERIC(19,0) NOT NULL, geom geometry NOT NULL );"
-  * </pre>
+ * # pull docker image
+ * docker pull mcr.microsoft.com/mssql/server:2017-latest
  *
+ * # create container
+ * docker run --rm -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=YourStrong!Passw0rd' \
+ * -p 1401:1433 --name sql1 -h sql1 \
+ * -d mcr.microsoft.com/mssql/server:2017-latest
+ *
+ * # create database + table
+ * sqlcmd -S localhost,1401 -U SA -P 'YourStrong!Passw0rd' -Q "CREATE DATABASE geomtest;"
+ * sqlcmd -S localhost,1401 -U SA -P 'YourStrong!Passw0rd' -Q "CREATE TABLE geomtest.dbo.geom (id NUMERIC(19,0) NOT NULL, geom geometry NOT NULL );"
+ * </pre>
  */
 
 @RunWith(Parameterized.class)
@@ -60,7 +59,7 @@ public class MsSqlJdbcConverterTest {
     @Before
     public void setUp() throws Exception {
         con = DriverManager.getConnection(
-                "jdbc:sqlserver://localhost:1419;"
+                "jdbc:sqlserver://localhost:1401;"
                         + "databaseName=geomtest;"
                         + "user=sa;"
                         + "password=YourStrong!Passw0rd;");
@@ -72,21 +71,39 @@ public class MsSqlJdbcConverterTest {
         con.close();
     }
 
+
+    /**
+     * Test an insert using setObject with a geometry.
+     * @throws SQLException if any
+     */
     @Test
     public void testInsert() throws SQLException, ParseException {
         WKTReader reader = new WKTReader();
         Geometry jts = reader.read(wkt);
         jts.setSRID(srid);
 
-        final String INSERT = "insert into geomtest.dbo.geom (id,geom) VALUES (?,?)";
+        // driver tracing
+//        Logger logger = Logger.getLogger("com.microsoft.sqlserver.jdbc");
+//        logger.setLevel(Level.FINEST);
+//        ConsoleHandler handler = new ConsoleHandler();
+//        handler.setFormatter(new SimpleFormatter());
+//        logger.addHandler(handler );
+//        handler.setLevel(Level.ALL);
+
+        final String INSERT = "INSERT INTO geomtest.dbo.geom (id,geom) VALUES (?,?)";
 
         try (PreparedStatement stm = con.prepareStatement(INSERT);) {
             stm.setLong(1, id);
             stm.setObject(2, converter.convertToNativeGeometryObject(jts, srid));
-            stm.execute();
+            assertFalse(stm.execute());
         }
     }
 
+
+    /**
+     * Test if the database thinks the given WKT yields a valid geometry.
+     * @throws SQLException if any
+     */
     @Test
     public void testIsValidDetailed() throws SQLException {
         final String ISVALID = "SELECT geometry::STGeomFromText(?,?).IsValidDetailed()";
@@ -98,6 +115,20 @@ public class MsSqlJdbcConverterTest {
             while (res.next()) {
                 assertEquals("24400: Valid", res.getString(1));
             }
+        }
+    }
+
+    /**
+     * Test an insert using geometry::STGeomFromText to convert the object to geometry inside the database.
+     * @throws SQLException if any
+     */
+    @Test
+    public void textInsert() throws SQLException {
+        final String INSERT = "INSERT INTO geomtest.dbo.geom (id,geom) VALUES (?,geometry::STGeomFromText(?," + srid + "))";
+        try (PreparedStatement stm = con.prepareStatement(INSERT);) {
+            stm.setLong(1, id);
+            stm.setString(2, wkt);
+            assertFalse(stm.execute());
         }
     }
 }

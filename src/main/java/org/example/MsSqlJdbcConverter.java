@@ -17,9 +17,9 @@ public class MsSqlJdbcConverter extends GeometryJdbcConverter {
         if (param == null || param.trim().length() == 0) {
             return null;
         }
-        System.out.println("Converted geom WKT: " + param + ", SRID: " + srid);
+//        System.out.println("Converted geom WKT: " + param + ", SRID: " + srid);
         Geometry sqlGeom = Geometry.STGeomFromText(param, srid);
-        System.out.println("mssql geom: " + sqlGeom);
+//        System.out.println("mssql geom: " + sqlGeom);
         return sqlGeom;
     }
 }
